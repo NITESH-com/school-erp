@@ -1706,7 +1706,7 @@ const MODS=[
 ['📊','#dbe8ff','Dashboard','माहिती फलक','School summary','',['dashboard']],
 ['👤','#e6dcff','Students','विद्यार्थी','Student list, class list','',['students','classlist','home']],
 ['📝','#d6f3e6','Admission','प्रवेश','Registration forms, approval','',['admissions','clerkadmission']],
-['📄','#fdecc8','Certificates','दाखले','Bonafide, leaving certificate','',['clerkbonafide','clerkleaving','bonafide']],
+['📄','#fdecc8','Certificates','दाखले','Bonafide, leaving certificate','',['clerkbonafide','clerkleaving','bonafide','certlog']],
 ['✅','#d6f3e6','Attendance','हजेरी','Daily attendance','',['attendance','myatt','mytatt','tatt']],
 ['🕒','#d3f0f5','Timetable','वेळापत्रक','Class timetable','',['timetable','vptimetable','mytt']],
 ['🗒️','#fbdcec','Exams & Results','परीक्षा व निकाल','Marks, results, hall tickets','',['exams','vpresults','myres','vphalls','tickets','myticket']],
@@ -1904,7 +1904,7 @@ function pull(force){fetch('api/db').then(r=>r.json()).then(j=>{if(!j.data||j.ve
  localStorage.setItem(KEY,JSON.stringify(j.data));DB=j.data;ver=j.ver;badge('updated ✔');try{route()}catch(e){}}).catch(()=>{})}
 const _s=window.save;window.save=function(){_s();clearTimeout(tm);tm=setTimeout(push,700)};
 if(ver===0&&localStorage.getItem(KEY))setTimeout(push,1200);else badge('connected ✔');
-setInterval(()=>{fetch('api/ver').then(r=>r.json()).then(j=>{if(j.ver>ver)pull(false)}).catch(()=>badge('offline ✖'))},15000);
+setInterval(()=>{if(document.hidden)return;fetch('api/ver').then(r=>r.json()).then(j=>{if(j.ver>ver)pull(false)}).catch(()=>badge('offline ✖'))},30000);
 })();
 </script>
 
@@ -1989,6 +1989,32 @@ try{if(!DB.settings.demoDone&&!DB.students.length&&!DB.teachers.length)setTimeou
  .modal{max-width:96vw!important}
 }
 </style>
+
+<script id="certJs">
+(function(){
+if(!Array.isArray(DB.certLog))DB.certLog=[];
+const meta=new Map(),TL={bonafide:'Bonafide / बोनाफाईड',leaving:'Leaving / शाळा सोडल्याचा'};
+const strip=h=>h.split(LOGO).join('__LOGO__').replace(/src="data:image[^"]{500,}"/g,'src="__PHOTO__"');
+const unstrip=(h,sid)=>h.split('__LOGO__').join(LOGO).replace(/src="__PHOTO__"/g,()=>'src="'+((getS(sid)||{}).photo||'')+'"');
+['clerkBonafideHTML','clerkLeavingHTML'].forEach((n,i)=>{const f=window[n];if(typeof f!=='function')return;
+ window[n]=function(sid,lang){const h=f.apply(this,arguments);meta.set(h,{type:i?'leaving':'bonafide',sid,lang:lang||''});if(meta.size>30)meta.delete(meta.keys().next().value);return h}});
+const _pd=window.printDoc;
+window.printDoc=function(h){try{const m=meta.get(h);if(m&&!window.__noLog&&typeof CUR!=='undefined'&&CUR){const s=getS(m.sid)||{},no=(h.match(/Certificate no:\s*<b>([^<]*)<\/b>/i)||[])[1]||'';
+  DB.certLog.push({id:uid('c'),type:m.type,sid:m.sid,name:s.name||'',cls:s.name?clsLabel(s):'',gr:s.gr||'',no,date:today(),ts:Date.now(),lang:m.lang,by:CUR.role+(CUR.name?' · '+CUR.name:''),html:strip(h)});
+  if(DB.certLog.length>200)DB.certLog=DB.certLog.slice(-200);save()}}catch(e){}return _pd.apply(this,arguments)};
+window.certPrint=id=>{const c=DB.certLog.find(x=>x.id===id);if(!c)return;window.__noLog=true;try{printDoc(unstrip(c.html,c.sid))}finally{window.__noLog=false}};
+window.certView=id=>{const c=DB.certLog.find(x=>x.id===id);if(!c)return;modal((TL[c.type]||'Certificate')+' · '+c.name,'<div class="certwrap">'+unstrip(c.html,c.sid)+'</div>',`<button class="btn" onclick="closeModal()">Close</button><button class="btn primary" onclick="certPrint('${id}')">Print again</button>`,true)};
+window.certFilter=()=>{const q=(document.getElementById('cl_q').value||'').toLowerCase(),t=document.getElementById('cl_t').value;let n=0;document.querySelectorAll('#cl_tb tr[data-s]').forEach(r=>{const ok=(!q||r.dataset.s.includes(q))&&(!t||r.dataset.t===t);r.style.display=ok?'':'none';if(ok)n++});const e=document.getElementById('cl_n');if(e)e.textContent=n+' certificates'};
+window.vCertLog=function(){const L=DB.certLog.slice().reverse();
+ return `<div class="card"><div class="bar"><h2 style="margin:0">Old certificates · जुने दाखले</h2><div class="sp"></div><span class="mr" id="cl_n">${L.length} certificates</span></div>
+ <p class="mr">Jo jo bonafide / leaving certificate print kela to ethe save hoto. Navin naav, GR kiva number ne shodha.</p>
+ <div class="fg"><label class="f"><span>Search / शोधा</span><input id="cl_q" oninput="certFilter()" placeholder="Name, GR, certificate no"></label><label class="f"><span>Type</span><select id="cl_t" onchange="certFilter()"><option value="">All</option><option value="bonafide">Bonafide</option><option value="leaving">Leaving</option></select></label></div>
+ <div class="tablewrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>GR</th><th>Type</th><th>No.</th><th>Printed by</th><th></th></tr></thead><tbody id="cl_tb">${L.map(c=>`<tr data-t="${c.type}" data-s="${esc((c.name+' '+c.gr+' '+c.no).toLowerCase())}"><td>${fmtD(c.date)}</td><td>${esc(c.name)}</td><td>${esc(c.cls)}</td><td>${esc(c.gr)}</td><td>${esc(TL[c.type]||c.type)}</td><td>${esc(c.no)}</td><td>${esc(c.by)}</td><td class="act"><button class="btn sm" onclick="certView('${c.id}')">View</button> <button class="btn sm accent" onclick="certPrint('${c.id}')">Print again</button></td></tr>`).join('')||'<tr><td colspan="8" class="empty">Ajun konte certificate print kele nahi. Print kelyavar ethe distil.</td></tr>'}</tbody></table></div></div>`};
+['clerk','admin','superadmin','viceprincipal'].forEach(r=>{if(ROLE_NAV[r]&&!ROLE_NAV[r].includes('certlog'))ROLE_NAV[r].push('certlog')});
+EXTRA_NAV.certlog=['Old certificates','जुने दाखले'];VIEWS.certlog=vCertLog;
+try{if(CUR&&!document.getElementById('app').hidden)route()}catch(e){}
+})();
+</script>
 </body>
 </html>
 
